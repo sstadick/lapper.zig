@@ -1,14 +1,20 @@
 const std = @import("std");
 const math = std.math;
 
+// helper function that returns zero if subtraction overflows
+inline fn checkedSub(comptime T: type, lhs: T, rhs: T) T {
+    var result: T = undefined;
+    const overflow = @subWithOverflow(T, lhs, rhs, &result);
+    return if (overflow) 0 else result;
+}
+
 fn Lapper(comptime T: type) type {
     return struct {
         const Self = @This();
         intervals: []Interval(T),
-        cursor: usize,
         max_len: u32,
-
-        // TODO: whay does intervals have to be `var`
+        /// Create a Lapper object
+        // TODO: Clarify who is responsible for intervals memory now
         pub fn init(intervals: []Interval(T)) Self {
             // sort the intervals
             std.sort.sort(Interval(T), intervals, Interval(T).lessThanStartStop);
@@ -22,8 +28,57 @@ fn Lapper(comptime T: type) type {
             return Self{
                 .intervals = intervals,
                 .max_len = max,
-                .cursor = 0,
             };
+        }
+
+        inline fn lowerBound(start: u32, intervals: []Interval(T)) usize {
+            var size = intervals.len;
+            var low: usize = 0;
+
+            while (size > 0) {
+                const half = size / 2; // TODO: check that this is int div
+                const other_half = size - half;
+                const probe = low + half;
+                const other_low = low + other_half;
+                const v = intervals[probe];
+                size = half;
+                low = if (v.start < start) other_low else low;
+            }
+            return low;
+        }
+
+        fn find(self: Self, start: u32, stop: u32) IterFind(T) {
+            return IterFind(T){
+                .inner = &self,
+                .offset = &Self.lowerBound(checkedSub(u32, start, self.max_len), self.intervals),
+                .end = self.intervals.len,
+                .start = start,
+                .stop = stop,
+            };
+        }
+    };
+}
+
+fn IterFind(comptime T: type) type {
+    return struct {
+        const Self = @This();
+        inner: *const Lapper(T),
+        offset: *usize,
+        end: usize,
+        start: u32,
+        stop: u32,
+
+        fn next(self: Self) ?Interval(T) {
+            while (self.offset.* < self.end) {
+                const interval = self.inner.*.intervals[self.offset.*];
+                self.offset.* += 1;
+                if (interval.overlap(self.start, self.stop)) {
+                    return interval;
+                } else if (interval.start >= self.stop) {
+                    break;
+                }
+            }
+            return null;
         }
     };
 }
@@ -50,9 +105,7 @@ fn Interval(comptime T: type) type {
         /// iv.intersect(Interval(bool).init(4, 6, true)) == 1
         /// ```
         pub inline fn intersect(self: Self, other: Self) u32 {
-            var intersection: u32 = undefined;
-            const overflow = @subWithOverflow(u32, math.min(self.stop, other.stop), math.max(self.start, other.start), &intersection);
-            return if (overflow) 0 else intersection;
+            return checkedSub(u32, math.min(self.stop, other.stop), math.max(self.start, other.start));
         }
 
         /// Compute whether self overlaps a range
@@ -86,7 +139,83 @@ fn Interval(comptime T: type) type {
 
 //-------------- TESTS --------------
 const testing = std.testing;
+
+fn setupNonOverlapping() Lapper(i32) {
+    const Iv = Interval(i32);
+    var data = [_]Iv{
+        Iv.init(0, 10, 0),
+        Iv.init(20, 30, 0),
+        Iv.init(40, 50, 0),
+        Iv.init(60, 70, 0),
+        Iv.init(80, 90, 0),
+    };
+    return Lapper(i32).init(data[0..]);
+}
+
+fn test_all_single(lapper: Lapper(i32), start: u32, stop: u32, expected: ?Interval(i32)) void {
+    if (lapper.find(start, stop).next()) |value| {
+        if (expected) |exp| {
+            // found value and expected value
+            testing.expect(value.start == exp.start and value.stop == exp.stop);
+        } else {
+            // expected null, found value
+            testing.expect(false);
+        }
+    } else {
+        if (expected) |exp| {
+            // found null, expected value
+            testing.expect(false);
+        } else {
+            // both null
+            testing.expect(true);
+        }
+    }
+}
+
 // Lapper tests
+test "Lapper should return null for a query.stop that hits an interval.start" {
+    const lapper = setupNonOverlapping();
+    const start: u32 = 15;
+    const stop: u32 = 20;
+    const expected: ?Interval(i32) = null;
+    test_all_single(lapper, start, stop, expected);
+}
+test "Lapper should return null for a query.start that hits an interval.stop" {
+    const lapper = setupNonOverlapping();
+    const start: u32 = 30;
+    const stop: u32 = 35;
+    const expected: ?Interval(i32) = null;
+    test_all_single(lapper, start, stop, expected);
+}
+test "Lapper should return an interval for a that query overlaps the start of the interval" {
+    const lapper = setupNonOverlapping();
+    const start: u32 = 15;
+    const stop: u32 = 25;
+    const expected: ?Interval(i32) = Interval(i32).init(20, 30, 0);
+    test_all_single(lapper, start, stop, expected);
+}
+test "Lapper should return an interval for a that query overlaps the stop of the interval" {
+    const lapper = setupNonOverlapping();
+    const start: u32 = 25;
+    const stop: u32 = 35;
+    const expected: ?Interval(i32) = Interval(i32).init(20, 30, 0);
+    test_all_single(lapper, start, stop, expected);
+}
+test "Lapper should return an interval for a query is enveloped by the interval" {
+    const lapper = setupNonOverlapping();
+    const start: u32 = 22;
+    const stop: u32 = 27;
+    const expected: ?Interval(i32) = Interval(i32).init(20, 30, 0);
+    test_all_single(lapper, start, stop, expected);
+}
+test "Lapper should return an interval for a query envelops the interval" {
+    const lapper = setupNonOverlapping();
+    const start: u32 = 20;
+    const stop: u32 = 30;
+    const expected: ?Interval(i32) = Interval(i32).init(20, 30, 0);
+    test_all_single(lapper, start, stop, expected);
+}
+
 test "Lapper finds correct max_len" {
     var ivs = [_]Interval(i32){ Interval(i32).init(0, 5, 0), Interval(i32).init(1, 6, 0), Interval(i32).init(2, 12, 2) };
     const lapper = Lapper(i32).init(ivs[0..]);
