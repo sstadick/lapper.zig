@@ -1,5 +1,7 @@
 const std = @import("std");
 const math = std.math;
+const warn = @import("std").debug.warn;
+const Allocator = std.mem.Allocator;
 
 // helper function that returns zero if subtraction overflows
 inline fn checkedSub(comptime T: type, lhs: T, rhs: T) T {
@@ -13,11 +15,16 @@ fn Lapper(comptime T: type) type {
         const Self = @This();
         intervals: []Interval(T),
         max_len: u32,
+        allocator: *Allocator,
         /// Create a Lapper object
-        // TODO: Clarify who is responsible for intervals memory now
-        pub fn init(intervals: []Interval(T)) Self {
+        /// The allocator is for deallocating the owned slice of intervals
+        pub fn init(allocator: *Allocator, intervals: []Interval(T)) Self {
             // sort the intervals
             std.sort.sort(Interval(T), intervals, Interval(T).lessThanStartStop);
+            warn("Init lapper; {}\n", .{intervals});
+            for (intervals) |iv| {
+                warn("iv: {}\n", .{iv});
+            }
             var max: u32 = 0;
             for (intervals) |interval| {
                 const iv_len = interval.stop - interval.start;
@@ -28,7 +35,11 @@ fn Lapper(comptime T: type) type {
             return Self{
                 .intervals = intervals,
                 .max_len = max,
+                .allocator = allocator
             };
+        }
+        pub fn deinit(self: Self) void {
+            self.allocator.free(self.intervals);
         }
 
         inline fn lowerBound(start: u32, intervals: []Interval(T)) usize {
@@ -47,10 +58,31 @@ fn Lapper(comptime T: type) type {
             return low;
         }
 
-        fn find(self: Self, start: u32, stop: u32) IterFind(T) {
+        pub fn find(self: Self, start: u32, stop: u32) IterFind(T) {
+            warn("Searching for {}, {}\n", .{start, stop});
+            warn("Offset found: {}\n", .{Self.lowerBound(checkedSub(u32, start, self.max_len), self.intervals)});
+            warn("wtf lapper: {}\n", .{self});
             return IterFind(T){
                 .inner = &self,
                 .offset = &Self.lowerBound(checkedSub(u32, start, self.max_len), self.intervals),
+                .end = self.intervals.len,
+                .start = start,
+                .stop = stop,
+            };
+        }
+        
+        pub fn seek(self: Self, start: u32, stop: u32, cursor: *usize) IterFind(T) {
+            if (cursor.* == 0 or (cursor.* < self.intervals.len and self.intervals[cursor.*].start > start)) {
+                cursor.* = Self.lowerBound(checkedSub(u32, start, self.max_len), self.intervals);
+            }
+            while (cursor.* + 1 < self.intervals.len and self.intervals[cursor.* + 1].start < checkedSub(u32, start, self.max_len)) {
+                cursor.* += 1;
+            }
+            // we don't want the iterator to move the cursor
+            var cursor_val: usize = cursor.*;
+            return IterFind(T){
+                .inner = &self,
+                .offset = &cursor_val,
                 .end = self.intervals.len,
                 .start = start,
                 .stop = stop,
@@ -69,8 +101,14 @@ fn IterFind(comptime T: type) type {
         stop: u32,
 
         fn next(self: Self) ?Interval(T) {
+            warn("wtf: {}\n", .{self});
+            warn("offsert: {}\n", .{self.offset.*});
+            for (self.inner.*.intervals) |iv| {
+                warn("iv -> {}\n", .{iv});
+            }
             while (self.offset.* < self.end) {
-                const interval = self.inner.*.intervals[self.offset.*];
+                const interval = self.inner.intervals[self.offset.*];
+                warn("Checking Iv: {} for overlap with query {},{}\n", .{interval, self.start, self.stop});
                 self.offset.* += 1;
                 if (interval.overlap(self.start, self.stop)) {
                     return interval;
@@ -139,9 +177,12 @@ fn Interval(comptime T: type) type {
 
 //-------------- TESTS --------------
 const testing = std.testing;
+const ArrayList  = std.ArrayList;
 
 fn setupNonOverlapping() Lapper(i32) {
     const Iv = Interval(i32);
+    const allocator = testing.allocator;
+    var list = ArrayList(Iv).init(testing.allocator);
     var data = [_]Iv{
         Iv.init(0, 10, 0),
         Iv.init(20, 30, 0),
@@ -149,27 +190,45 @@ fn setupNonOverlapping() Lapper(i32) {
         Iv.init(60, 70, 0),
         Iv.init(80, 90, 0),
     };
-    return Lapper(i32).init(data[0..]);
+    list.appendSlice(&data) catch unreachable;
+    return Lapper(i32).init(allocator, list.toOwnedSlice());
 }
 
 fn test_all_single(lapper: Lapper(i32), start: u32, stop: u32, expected: ?Interval(i32)) void {
-    if (lapper.find(start, stop).next()) |value| {
-        if (expected) |exp| {
-            // found value and expected value
-            testing.expect(value.start == exp.start and value.stop == exp.stop);
+    var cursor: usize = 0;
+    defer lapper.deinit();
+    const founds = [_]?Interval(i32){lapper.find(start, stop).next(), lapper.seek(start, stop, &cursor).next()};
+    for (founds) |found| {
+        if (found) |value| {
+            if (expected) |exp| {
+                // found value and expected value
+                warn("Expecting {}.\nFound {}\n", .{expected, found});
+                testing.expect(value.start == exp.start and value.stop == exp.stop);
+            } else {
+                // expected null, found value
+                warn("Expecting {}.\nFound {}\n", .{expected, found});
+                testing.expect(false);
+            }
         } else {
-            // expected null, found value
-            testing.expect(false);
-        }
-    } else {
-        if (expected) |exp| {
-            // found null, expected value
-            testing.expect(false);
-        } else {
-            // both null
-            testing.expect(true);
+            if (expected) |exp| {
+                // found null, expected value
+                warn("Expecting {}.\nFound {}\n", .{expected, found});
+                testing.expect(false);
+            } else {
+                // both null
+                warn("Expecting {}.\nFound {}\n", .{expected, found});
+                testing.expect(true);
+            }
         }
     }
+}
+
+fn test_all_multiple(lapper: Lapper(i32), start: u32, stop: u32, expected: []Interval(i32)) void {
+    var cursor: usize = 0;
+    var list = ArrayList(Interval(i32)).init(*testing.allocator);
+    defer lapper.deinit()
+    defer testing.allocator.free(expected);
+    defer list.deinit();
 }
 
 // Lapper tests
@@ -218,7 +277,10 @@ test "Lapper should return an interval for a query envelops the interval" {
 
 test "Lapper finds correct max_len" {
     var ivs = [_]Interval(i32){ Interval(i32).init(0, 5, 0), Interval(i32).init(1, 6, 0), Interval(i32).init(2, 12, 2) };
-    const lapper = Lapper(i32).init(ivs[0..]);
+    var list = ArrayList(Interval(i32)).init(testing.allocator);
+    list.appendSlice(&ivs) catch unreachable;
+    const lapper = Lapper(i32).init(testing.allocator, list.toOwnedSlice());
+    defer lapper.deinit();
     testing.expect(lapper.max_len == 10);
 }
 
