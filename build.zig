@@ -15,6 +15,7 @@ pub fn build(b: *Builder) void {
     // Configuration for building the exmaple file into and executable
     const target = b.standardTargetOptions(.{});
     const exe = b.addExecutable("bedcov-zig", "./example.zig");
+    exe.linkLibC();
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();

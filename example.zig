@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const warn = std.debug.warn;
-// const allocator = std.heap.c_allocator;
+const allocator = std.heap.c_allocator;
 const StringHashMap = std.StringHashMap;
 const ArrayList = std.ArrayList;
 
@@ -10,10 +10,6 @@ const lapper = @import("src/lapper.zig");
 /// This is an example of calculating bedcov as described in the
 /// https://github.com/lh3/biofast repo
 pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
-    defer arena.deinit();
-    const allocator = &arena.allocator;
-
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
@@ -53,7 +49,7 @@ pub fn main() !void {
         const stop = split_it.next().?;
         // parse the ints, clone the str, add to the hash, create an interval
         const iv = Iv.init(try std.fmt.parseInt(u32, start, 10), try std.fmt.parseInt(u32, stop, 10), {});
-        var result = try bed_raw.getOrPut(chr);
+        var result = try bed_raw.getOrPut(try std.mem.dupe(allocator, u8, chr));
         if (!result.found_existing) {
             result.kv.value = ArrayList(Iv).init(allocator);
             try result.kv.value.append(iv);
@@ -61,4 +57,12 @@ pub fn main() !void {
             try result.kv.value.append(iv);
         }
     }
+
+    var total: usize =0;
+    var it = bed_raw.iterator();
+    while (it.next()) |kv| {
+        total += kv.value.items.len;
+    }
+    warn("{} lines\n", .{total});
+    bed_raw.deinit();
 }
