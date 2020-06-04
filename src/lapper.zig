@@ -10,7 +10,7 @@ inline fn checkedSub(comptime T: type, lhs: T, rhs: T) T {
     return if (overflow) 0 else result;
 }
 
-fn Lapper(comptime T: type) type {
+pub fn Lapper(comptime T: type) type {
     return struct {
         const Self = @This();
         intervals: []Interval(T),
@@ -108,7 +108,7 @@ fn IterFind(comptime T: type) type {
 }
 
 /// Represents an Interval that can hold a `val` of any type
-fn Interval(comptime T: type) type {
+pub fn Interval(comptime T: type) type {
     return struct {
         const Self = @This();
         start: u32,
@@ -162,175 +162,3 @@ fn Interval(comptime T: type) type {
 }
 
 //-------------- TESTS --------------
-const testing = std.testing;
-const ArrayList = std.ArrayList;
-
-fn setupNonOverlapping() Lapper(i32) {
-    const Iv = Interval(i32);
-    const allocator = testing.allocator;
-    var list = ArrayList(Iv).init(testing.allocator);
-    var data = [_]Iv{
-        Iv.init(0, 10, 0),
-        Iv.init(20, 30, 0),
-        Iv.init(40, 50, 0),
-        Iv.init(60, 70, 0),
-        Iv.init(80, 90, 0),
-    };
-    list.appendSlice(&data) catch unreachable;
-    return Lapper(i32).init(allocator, list.toOwnedSlice());
-}
-fn setupOverlapping() Lapper(i32) {
-    const Iv = Interval(i32);
-    const allocator = testing.allocator;
-    var list = ArrayList(Iv).init(testing.allocator);
-    var data = [_]Iv{
-        Iv.init(0, 15, 0),
-        Iv.init(10, 25, 0),
-        Iv.init(20, 35, 0),
-        Iv.init(30, 45, 0),
-        Iv.init(40, 55, 0),
-        Iv.init(50, 65, 0),
-        Iv.init(60, 75, 0),
-        Iv.init(70, 85, 0),
-        Iv.init(80, 95, 0),
-        Iv.init(90, 105, 0),
-    };
-    list.appendSlice(&data) catch unreachable;
-    return Lapper(i32).init(allocator, list.toOwnedSlice());
-}
-
-fn test_all_single(lapper: Lapper(i32), start: u32, stop: u32, expected: ?Interval(i32)) void {
-    var cursor: usize = 0;
-    defer lapper.deinit();
-    if (expected == null) {
-        testing.expect(lapper.find(start, stop).next() == null);
-        testing.expect(lapper.seek(start, stop, &cursor).next() == null);
-    } else {
-        const find_found = lapper.find(start, stop).next();
-        warn("Find found: {}\n", .{find_found});
-        const seek_found = lapper.seek(start, stop, &cursor).next();
-        warn("Seek Found: {}\n", .{seek_found});
-        testing.expect(find_found.?.start == expected.?.start and find_found.?.stop == expected.?.stop);
-        testing.expect(seek_found.?.start == expected.?.start and seek_found.?.stop == expected.?.stop);
-    }
-}
-
-fn test_all_multiple(lapper: Lapper(i32), start: u32, stop: u32, expected: []Interval(i32)) void {
-    var cursor: usize = 0;
-    defer lapper.deinit();
-    defer testing.allocator.free(expected);
-
-    var index: usize = 0;
-    var find_it = lapper.find(start, stop);
-    while (find_it.next()) |found| : (index += 1) {
-        const exp = expected[index];
-        warn("Find Found {}\nExpected {}\n", .{ found, exp });
-        testing.expect(found.start == exp.start and found.stop == exp.stop);
-    }
-    index = 0;
-    var seek_it = lapper.seek(start, stop, &cursor);
-    while (seek_it.next()) |found| : (index += 1) {
-        const exp = expected[index];
-        warn("Seek Found {}\nExpected {}\n", .{ found, exp });
-        testing.expect(found.start == exp.start and found.stop == exp.stop);
-    }
-}
-
-// Lapper tests
-test "Lapper should return null for a query.stop that hits an interval.start" {
-    const lapper = setupNonOverlapping();
-    const start: u32 = 15;
-    const stop: u32 = 20;
-    const expected: ?Interval(i32) = null;
-    test_all_single(lapper, start, stop, expected);
-}
-test "Lapper should return null for a query.start that hits an interval.stop" {
-    const lapper = setupNonOverlapping();
-    const start: u32 = 30;
-    const stop: u32 = 35;
-    const expected: ?Interval(i32) = null;
-    test_all_single(lapper, start, stop, expected);
-}
-test "Lapper should return an interval for a that query overlaps the start of the interval" {
-    const lapper = setupNonOverlapping();
-    const start: u32 = 15;
-    const stop: u32 = 25;
-    const expected: ?Interval(i32) = Interval(i32).init(20, 30, 0);
-    test_all_single(lapper, start, stop, expected);
-}
-test "Lapper should return an interval for a that query overlaps the stop of the interval" {
-    const lapper = setupNonOverlapping();
-    const start: u32 = 25;
-    const stop: u32 = 35;
-    const expected: ?Interval(i32) = Interval(i32).init(20, 30, 0);
-    test_all_single(lapper, start, stop, expected);
-}
-test "Lapper should return an interval for a query is enveloped by the interval" {
-    const lapper = setupNonOverlapping();
-    const start: u32 = 22;
-    const stop: u32 = 27;
-    const expected: ?Interval(i32) = Interval(i32).init(20, 30, 0);
-    test_all_single(lapper, start, stop, expected);
-}
-test "Lapper should return an interval for a query envelops the interval" {
-    const lapper = setupNonOverlapping();
-    const start: u32 = 20;
-    const stop: u32 = 30;
-    const expected: ?Interval(i32) = Interval(i32).init(20, 30, 0);
-    test_all_single(lapper, start, stop, expected);
-}
-test "Lapper should return all intervals that it overlaps" {
-    const lapper = setupOverlapping();
-    const start: u32 = 8;
-    const stop: u32 = 20;
-    var expected_list = ArrayList(Interval(i32)).init(testing.allocator);
-    var expected = [_]Interval(i32){ Interval(i32).init(0, 15, 0), Interval(i32).init(10, 25, 0) };
-    expected_list.appendSlice(&expected) catch unreachable;
-    test_all_multiple(lapper, start, stop, expected_list.toOwnedSlice());
-}
-
-test "Lapper finds correct max_len" {
-    var ivs = [_]Interval(i32){ Interval(i32).init(0, 5, 0), Interval(i32).init(1, 6, 0), Interval(i32).init(2, 12, 2) };
-    var list = ArrayList(Interval(i32)).init(testing.allocator);
-    list.appendSlice(&ivs) catch unreachable;
-    const lapper = Lapper(i32).init(testing.allocator, list.toOwnedSlice());
-    defer lapper.deinit();
-    testing.expect(lapper.max_len == 10);
-}
-
-// Interval tests
-test "Interval should intersect an identical interval" {
-    const iv1 = Interval(bool).init(10, 15, true);
-    const iv2 = Interval(bool).init(10, 15, true);
-    testing.expect(iv1.intersect(iv2) == 5);
-}
-test "Interval should intersect an inner interval" {
-    const iv1 = Interval(bool).init(10, 15, true);
-    const iv2 = Interval(bool).init(12, 15, true);
-    testing.expect(iv1.intersect(iv2) == 3);
-}
-test "Interval should intersect an interval overlapping endpoint" {
-    const iv1 = Interval(bool).init(10, 15, true);
-    const iv2 = Interval(bool).init(14, 15, true);
-    testing.expect(iv1.intersect(iv2) == 1);
-}
-test "Interval should intersect an interval overlapping startpoint" {
-    const iv1 = Interval(bool).init(68, 71, true);
-    const iv2 = Interval(bool).init(70, 75, true);
-    testing.expect(iv1.intersect(iv2) == 1);
-}
-test "Interval should not intersect an interval it doesn't overlap" {
-    const iv1 = Interval(bool).init(50, 55, true);
-    const iv2 = Interval(bool).init(60, 65, true);
-    testing.expect(iv1.intersect(iv2) == 0);
-}
-test "Interval should not intersect an interval where iv1.stop == iv2.start" {
-    const iv1 = Interval(bool).init(40, 50, true);
-    const iv2 = Interval(bool).init(50, 55, true);
-    testing.expect(iv1.intersect(iv2) == 0);
-}
-test "Interval should not intersect an interval where iv1.start== iv2.start" {
-    const iv1 = Interval(bool).init(70, 120, true);
-    const iv2 = Interval(bool).init(70, 75, true);
-    testing.expect(iv1.intersect(iv2) == 5);
-}
