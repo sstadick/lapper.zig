@@ -1,37 +1,22 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const warn = std.debug.warn;
-const allocator = std.heap.c_allocator;
+const Allocator = std.mem.Allocator;
 const StringHashMap = std.StringHashMap;
 const ArrayList = std.ArrayList;
 
 const lapper = @import("src/lapper.zig");
+const Iv = lapper.Interval(void); // alias for intervals with no used value field
 
-/// This is an example of calculating bedcov as described in the
-/// https://github.com/lh3/biofast repo
-pub fn main() !void {
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
-    if (args.len != 3) {
-        warn("Usage: becov-zig <loaded.bed> <streamed.bed>\n", .{});
-        std.process.exit(1);
-    }
-    const inputBed = try std.fs.path.resolve(allocator, &[_][]const u8{args[1]});
-    const streamBed = try std.fs.path.resolve(allocator, &[_][]const u8{args[2]});
-
-    // alias for intervals with no used value field
-    const Iv = lapper.Interval(void);
-
-    // Create a hash
-    var bed_raw = StringHashMap(ArrayList(Iv)).init(allocator);
-
-    // Read the bed file and build up the lists of interval
-    const bed_fh = try std.fs.openFileAbsolute(inputBed, .{});
+/// Parse bed file into hash of intervals
+fn read_bed(allocator: *Allocator, bed_file_path: []const u8) !StringHashMap(ArrayList(Iv)) {
+    const abs_bed_path = try std.fs.path.resolve(allocator, &[_][]const u8{bed_file_path});
+    defer allocator.free(abs_bed_path);
+    const bed_fh = try std.fs.openFileAbsolute(abs_bed_path, .{});
     defer bed_fh.close();
     const stream = std.io.bufferedInStream(bed_fh.inStream()).inStream();
     var buffer: [512]u8 = undefined;
-    // TODO: Just take the first three fields instead of line based parsing?
+    var bed_raw = StringHashMap(ArrayList(Iv)).init(allocator);
     while (stream.readUntilDelimiterOrEof(&buffer, '\n') catch |err| switch (err) {
         error.StreamTooLong => blk: {
             // Skip to the delimiter in the strea, to fix parsing
@@ -42,7 +27,6 @@ pub fn main() !void {
         },
         else => |e| return e,
     }) |line| {
-        // TODO: Add real errors if these are missing
         var split_it = std.mem.split(line, "\t");
         const chr = split_it.next().?;
         const start = split_it.next().?;
@@ -57,12 +41,34 @@ pub fn main() !void {
             try result.kv.value.append(iv);
         }
     }
+    return bed_raw;
+}
 
-    var total: usize =0;
+/// This is an example of calculating bedcov as described in the
+/// https://github.com/lh3/biofast repo
+pub fn main() !void {
+    const allocator = std.heap.c_allocator;
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len != 3) {
+        warn("Usage: becov-zig <loaded.bed> <streamed.bed>\n", .{});
+        std.process.exit(1);
+    }
+
+    // Create a hash
+    var bed_raw = try read_bed(allocator, args[1]);
+
+    // convert to lappers
+
+    // stream next file
+
+    var total: usize = 0;
     var it = bed_raw.iterator();
     while (it.next()) |kv| {
         total += kv.value.items.len;
     }
     warn("{} lines\n", .{total});
+    // TODO: leadking all the lists I think
     bed_raw.deinit();
 }
