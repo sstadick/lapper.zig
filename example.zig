@@ -80,7 +80,6 @@ pub fn main() !void {
     defer bed_fh.close();
     const stream = std.io.bufferedInStream(bed_fh.inStream()).inStream();
     var buffer: [512]u8 = undefined;
-    warn("Start Timer\n", .{});
     while (stream.readUntilDelimiterOrEof(&buffer, '\n') catch |err| switch (err) {
         error.StreamTooLong => blk: {
             // Skip to the delimiter in the strea, to fix parsing
