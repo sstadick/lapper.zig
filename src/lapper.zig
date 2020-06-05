@@ -20,7 +20,8 @@ pub fn Lapper(comptime T: type) type {
         /// The allocator is for deallocating the owned slice of intervals
         pub fn init(allocator: *Allocator, intervals: []Interval(T)) Self {
             // sort the intervals
-            std.sort.sort(Interval(T), intervals, Interval(T).lessThanStartStop);
+            // std.sort.sort(Interval(T), intervals, Interval(T).lessThanStartStop);
+            Self.bubblesort(intervals);
             var max: u32 = 0;
             for (intervals) |interval| {
                 const iv_len = interval.stop - interval.start;
@@ -36,6 +37,24 @@ pub fn Lapper(comptime T: type) type {
         }
         pub fn deinit(self: Self) void {
             self.allocator.free(self.intervals);
+        }
+
+        inline fn swap(iv_a: *Interval(T), iv_b: *Interval(T)) void {
+            var temp: Interval(T) = iv_a.*;
+            iv_a.* = iv_b.*;
+            iv_b.* = temp;
+        }
+
+        inline fn bubblesort(ivs: []Interval(T)) void {
+            var i: usize = 0;
+            while (i < ivs.len) : (i += 1) {
+                var j: usize = 0;
+                while (j < ivs.len - i - 1) : (j += 1) {
+                    if (ivs[j].start > ivs[j + 1].start) {
+                        swap(&ivs[j], &ivs[j + 1]);
+                    }
+                }
+            }
         }
 
         inline fn lowerBound(start: u32, intervals: []Interval(T)) usize {
