@@ -96,26 +96,32 @@ pub fn main() !void {
 
         // find falues in `bed` hash
         if (bed.getValue(chr)) |chr_lapper| {
-            const start = try std.fmt.parseInt(u32, split_it.next().?, 10);
-            const stop = try std.fmt.parseInt(u32, split_it.next().?, 10);
-            var coverage_start: u32 = 0;
-            var coverage_stop: u32 = 0;
-            var coverage: u32 = 0;
-            var n: usize = 0;
-            var it = chr_lapper.find(start, stop);
-            while (it.next()) |iv| : (n += 1) {
-                var start_iv = if (iv.start > coverage_start) iv.start else coverage_start;
-                var stop_iv = if (iv.stop < coverage_stop) iv.stop else coverage_stop;
-                if (start_iv > coverage_stop) {
-                    coverage += coverage_stop - coverage_start;
-                    coverage_start = start_iv;
-                    coverage_stop = stop_iv;
+            const st1 = try std.fmt.parseInt(u32, split_it.next().?, 10);
+            const en1 = try std.fmt.parseInt(u32, split_it.next().?, 10);
+            var cov_st: u32 = 0;
+            var cov_en: u32 = 0;
+            var cov: u32 = 0;
+            var cnt: usize = 0;
+            var it = chr_lapper.find(st1, en1);
+            while (it.next()) |iv| : (cnt += 1) {
+                var st0 = iv.start;
+                var en0 = iv.stop;
+                if (st0 < st1) {
+                    st0 = st1;
+                }
+                if (en0 > en1) {
+                    en0 = en1;
+                }
+                if (st0 > cov_en) {
+                    cov += cov_en - cov_st;
+                    cov_st = st0;
+                    cov_en = en0;
                 } else {
-                    coverage_stop = if (coverage_stop < stop_iv) stop_iv else coverage_stop;
+                    cov_en = if (cov_en > en0) cov_en else en0;
                 }
             }
-            coverage += coverage_stop - coverage_start;
-            try std.fmt.format(stdout, "{}\t{}\t{}\t{}\t{}\n", .{ chr, start, stop, n, coverage });
+            cov += cov_en - cov_st;
+            try std.fmt.format(stdout, "{}\t{}\t{}\t{}\t{}\n", .{ chr, st1, en1, cnt, cov });
         } else {
             try std.fmt.format(stdout, "{}\t{}\t{}\t0\t0\n", .{ chr, split_it.next().?, split_it.next().? });
         }
