@@ -61,7 +61,7 @@ fn read_bed(allocator: *Allocator, bed_file_path: []const u8) !StringHashMap(*la
 pub fn main() !void {
     const allocator = std.heap.c_allocator;
     // const allocator = std.testing.allocator;
-    const stdout = std.io.getStdOut().outStream();
+    const stdout = std.io.bufferedOutStream(std.io.getStdOut().outStream()).outStream();
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
@@ -115,9 +115,9 @@ pub fn main() !void {
                 }
             }
             coverage += coverage_stop - coverage_start;
-            warn("{}\t{}\t{}\t{}\t{}\n", .{ chr, start, stop, n, coverage });
+            try std.fmt.format(stdout, "{}\t{}\t{}\t{}\t{}\n", .{ chr, start, stop, n, coverage });
         } else {
-            warn("{}\t{}\t{}\t0\t0\n", .{ chr, split_it.next().?, split_it.next().? });
+            try std.fmt.format(stdout, "{}\t{}\t{}\t0\t0\n", .{ chr, split_it.next().?, split_it.next().? });
         }
     }
 
