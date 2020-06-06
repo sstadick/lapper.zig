@@ -61,7 +61,8 @@ fn read_bed(allocator: *Allocator, bed_file_path: []const u8) !StringHashMap(*la
 pub fn main() !void {
     const allocator = std.heap.c_allocator;
     // const allocator = std.testing.allocator;
-    const stdout = std.io.bufferedOutStream(std.io.getStdOut().outStream()).outStream();
+    var buf_stdout = std.io.bufferedOutStream(std.io.getStdOut().outStream());
+    const stdout = buf_stdout.outStream();
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
@@ -102,17 +103,14 @@ pub fn main() !void {
             var cov: u32 = 0;
             var cnt: usize = 0;
             var it = chr_lapper.find(st1, en1);
-            while (it.next()) |iv| : (cnt += 1) {
+            while (it.next()) |iv| {
+                cnt += 1;
                 var st0 = iv.start;
                 var en0 = iv.stop;
-                if (st0 < st1) {
-                    st0 = st1;
-                }
-                if (en0 > en1) {
-                    en0 = en1;
-                }
+                if (st0 < st1) st0 = st1;
+                if (en0 > en1) en0 = en1;
                 if (st0 > cov_en) {
-                    cov += cov_en - cov_st;
+                    cov += (cov_en - cov_st);
                     cov_st = st0;
                     cov_en = en0;
                 } else {
@@ -125,6 +123,6 @@ pub fn main() !void {
             try std.fmt.format(stdout, "{}\t{}\t{}\t0\t0\n", .{ chr, split_it.next().?, split_it.next().? });
         }
     }
-
+    try buf_stdout.flush();
     bed.deinit();
 }

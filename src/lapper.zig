@@ -20,8 +20,7 @@ pub fn Lapper(comptime T: type) type {
         /// The allocator is for deallocating the owned slice of intervals
         pub fn init(allocator: *Allocator, intervals: []Interval(T)) Self {
             // sort the intervals
-            // std.sort.sort(Interval(T), intervals, Interval(T).lessThanStartStop);
-            Self.sort(intervals);
+            std.sort.sort(Interval(T), intervals, Interval(T).lessThan);
             var max: u32 = 0;
             for (intervals) |interval| {
                 const iv_len = interval.stop - interval.start;
@@ -55,37 +54,6 @@ pub fn Lapper(comptime T: type) type {
                     }
                 }
             }
-        }
-        // See https://github.com/ziglang/zig/pull/209/files for faster and better sort
-        inline fn sort(array: []Interval(T)) void {
-            if (array.len > 0) {
-                quicksort(array, 0, array.len - 1);
-            }
-        }
-
-        fn quicksort(array: []Interval(T), left: usize, right: usize) void {
-            var i = left;
-            var j = right;
-            var p = (i + j) / 2;
-
-            while (i <= j) {
-                while (Interval(T).lessThan(array[i], array[p])) {
-                    i += 1;
-                }
-                while (Interval(T).lessThan(array[p], array[j])) {
-                    j -= 1;
-                }
-                if (i <= j) {
-                    const tmp = array[i];
-                    array[i] = array[j];
-                    array[j] = tmp;
-                    i += 1;
-                    if (j > 0) j -= 1;
-                }
-            }
-
-            if (left < j) quicksort(array, left, j);
-            if (i < right) quicksort(array, i, right);
         }
 
         inline fn lowerBound(start: u32, intervals: []Interval(T)) usize {
