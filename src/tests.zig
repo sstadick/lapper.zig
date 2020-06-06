@@ -83,15 +83,18 @@ fn setupBadLapper() Lapper(i32) {
     var list = ArrayList(Iv).init(testing.allocator);
     var data = [_]Iv{
         Iv.init(70, 120, 0), // max_len = 50
-        Iv.init(10, 15, 0),
-        Iv.init(10, 15, 0), // exact overlap
         Iv.init(12, 15, 0), // inner overlap
         Iv.init(14, 16, 0), // overlap end
         Iv.init(40, 45, 0),
+        Iv.init(10, 15, 0), // exact overlap
+        Iv.init(10, 12, 0),
         Iv.init(50, 55, 0),
         Iv.init(60, 65, 0),
         Iv.init(68, 71, 0), // overlap start
         Iv.init(70, 75, 0),
+        Iv.init(150, 300, 0), // Test that sort order worked
+        Iv.init(150, 200, 0),
+        Iv.init(150, 290, 0),
     };
     list.appendSlice(&data) catch unreachable;
     return Lapper(i32).init(allocator, list.toOwnedSlice());
@@ -243,6 +246,24 @@ test "Lapper should return first match if lower_bound puts us before first match
     const stop: u32 = 55;
     const expected: ?Interval(i32) = Interval(i32).init(50, 55, 0);
     test_all_single(lapper, start, stop, expected);
+}
+
+// This tests to make sure the sort sorted correclty:
+// Iv.init(150, 300, 0),
+// Iv.init(150, 200, 0),
+// Iv.init(150, 290, 0),
+// If these were not sorted correctly, the second interval will cause find to break early
+test "Lapper should find both intervals when one comes second in input, but has a smaller stop" {
+    const lapper = setupBadLapper();
+    const start: u32 = 280;
+    const stop: u32 = 320;
+    var expected_list = ArrayList(Interval(i32)).init(testing.allocator);
+    var expected = [_]Interval(i32){
+        Interval(i32).init(150, 290, 0),
+        Interval(i32).init(150, 300, 0),
+    };
+    expected_list.appendSlice(&expected) catch unreachable;
+    test_all_multiple(lapper, start, stop, expected_list.toOwnedSlice());
 }
 
 test "lapper finds correct max_len" {

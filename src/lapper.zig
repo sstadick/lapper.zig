@@ -69,10 +69,10 @@ pub fn Lapper(comptime T: type) type {
             var p = (i + j) / 2;
 
             while (i <= j) {
-                while (array[i].start < array[p].start) {
+                while (Interval(T).lessThan(array[i], array[p])) {
                     i += 1;
                 }
-                while (array[j].start > array[p].start) {
+                while (Interval(T).lessThan(array[p], array[j])) {
                     j -= 1;
                 }
                 if (i <= j) {
@@ -192,21 +192,15 @@ pub fn Interval(comptime T: type) type {
         }
 
         // Return true if left is less than right
-        fn lessThanStartStop(left: Self, right: Self) bool {
+        fn lessThan(left: Self, right: Self) bool {
             if (left.start < right.start) {
                 return true;
             }
             if (left.start > right.start) {
                 return false;
             }
-            // the are equal start positions
-            if (left.stop < right.stop) {
-                return true;
-            }
-            if (left.stop > right.stop) {
-                return false;
-            }
-            return true; // The are both equal, default to left being less than right
+            // they are equal start positions
+            return left.stop < right.stop;
         }
     };
 }
