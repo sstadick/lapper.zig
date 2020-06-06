@@ -1,3 +1,5 @@
+/// This example takes two bed files and calculates the coverage in the same
+/// manner as `bedtools coverage`.
 const std = @import("std");
 const assert = std.debug.assert;
 const warn = std.debug.warn;
@@ -8,7 +10,7 @@ const ArrayList = std.ArrayList;
 const lapper = @import("src/lapper.zig");
 const Iv = lapper.Interval(void); // alias for intervals with no used value field
 
-/// Parse bed file into hash of intervals
+/// Parse bed file into hash of `Lapper`s
 fn read_bed(allocator: *Allocator, bed_file_path: []const u8) !StringHashMap(*lapper.Lapper(void)) {
     const abs_bed_path = try std.fs.path.resolve(allocator, &[_][]const u8{bed_file_path});
     defer allocator.free(abs_bed_path);
